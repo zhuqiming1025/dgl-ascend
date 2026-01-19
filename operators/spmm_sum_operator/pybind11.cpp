@@ -15,21 +15,28 @@
  #include "torch_npu/csrc/core/npu/NPUStream.h"
  #include "torch_npu/csrc/core/npu/NPUCachingAllocator.h"
  
- namespace my_spmm_sum {
- at::Tensor run_spmm_sum(const at::Tensor &row_ptr, const at::Tensor &col_ind,
-                                const at::Tensor &values, const at::Tensor &dense_matrix,
-                                uint32_t numSparseRows, uint32_t numSparseCols, uint32_t numDenseCols,
-                                uint32_t maxNnzPerRow)
- {
-     auto acl_stream = c10_npu::getCurrentNPUStream().stream(false);
-     
-     // 将输入从 float 转换为 half (float16)
-     auto values_half = values.to(at::kHalf);
-     auto dense_matrix_half = dense_matrix.to(at::kHalf);
-     
-     // 计算输出张量大小，使用 half 类型
-     uint32_t nnz = values.size(0);
-     auto output_half = at::empty({numSparseRows, numDenseCols}, dense_matrix_half.options());
+namespace my_spmm_sum {
+at::Tensor run_spmm_sum(const at::Tensor &row_ptr, const at::Tensor &col_ind,
+                               const at::Tensor &values, const at::Tensor &dense_matrix,
+                               uint32_t numSparseRows, uint32_t numSparseCols, uint32_t numDenseCols,
+                               uint32_t maxNnzPerRow)
+{
+    auto acl_stream = c10_npu::getCurrentNPUStream().stream(false);
+    
+    // 确保所有输入张量都是连续的
+    auto row_ptr_contiguous = row_ptr.contiguous();
+    auto col_ind_contiguous = col_ind.contiguous();
+    auto values_contiguous = values.contiguous();
+    auto dense_matrix_contiguous = dense_matrix.contiguous();
+    
+    // 将输入从 float 转换为 half (float16)，并确保连续
+    auto values_half = values_contiguous.to(at::kHalf).contiguous();
+    auto dense_matrix_half = dense_matrix_contiguous.to(at::kHalf).contiguous();
+    
+    // 计算输出张量大小，使用 half 类型
+    uint32_t nnz = values_contiguous.size(0);
+    // 注意：输出是累加写入时必须初始化为 0
+    auto output_half = at::zeros({numSparseRows, numDenseCols}, dense_matrix_half.options());
      
      
      SpmmSumTilingData tiling;
@@ -39,21 +46,21 @@
      tiling.nnz = nnz;
      tiling.maxNnzPerRow = maxNnzPerRow;
      
-     uint32_t blockDim = 32;
-     
-     ACLRT_LAUNCH_KERNEL(spmm_sum)
-     (blockDim, acl_stream,
-      const_cast<void *>(row_ptr.data_ptr()),
-      const_cast<void *>(col_ind.data_ptr()),
-      const_cast<void *>(values_half.data_ptr()),
-      const_cast<void *>(dense_matrix_half.data_ptr()),
-      const_cast<void *>(output_half.data_ptr()),
-      &tiling);
-     
-     // 将结果从 half 转换为 float
-     auto output = output_half.to(at::kFloat);
-     
-     return output;
+    uint32_t blockDim = 32;
+    
+    ACLRT_LAUNCH_KERNEL(spmm_sum)
+    (blockDim, acl_stream,
+     const_cast<void *>(row_ptr_contiguous.data_ptr()),
+     const_cast<void *>(col_ind_contiguous.data_ptr()),
+     const_cast<void *>(values_half.data_ptr()),
+     const_cast<void *>(dense_matrix_half.data_ptr()),
+     const_cast<void *>(output_half.data_ptr()),
+     &tiling);
+    
+    // 将结果从 half 转换为 float，并确保输出也是连续的
+    auto output = output_half.to(at::kFloat).contiguous();
+    
+    return output;
  }
  } // namespace my_spmm_sum
 

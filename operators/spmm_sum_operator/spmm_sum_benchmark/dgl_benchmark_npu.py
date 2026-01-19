@@ -182,8 +182,8 @@ def main():
     # 测试参数
     num_iterations = 100
     datasets = [
-        # ("Cora", CoraGraphDataset),
-        ("PubMed", PubmedGraphDataset),
+        ("Cora", CoraGraphDataset),
+        # ("PubMed", PubmedGraphDataset),
     ]
 
     all_results = []

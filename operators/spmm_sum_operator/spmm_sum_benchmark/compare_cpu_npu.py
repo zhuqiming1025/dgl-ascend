@@ -13,6 +13,47 @@ import sys
 import os
 import gc
 
+# -------------- debug utils --------------
+def dump_cpu_row_contrib(row_idx, row_ptr, col_ind, values, features, out_txt_path=None, print_to_stdout=True):
+    """
+    输出 CPU 参与计算的某一行（dst=row_idx）所有贡献项：
+    (src_idx, weight, feature_vector)
+
+    注意：这里的 CSR 是按 (dst, src) 构造的，因此 row_idx 对应输出的 dst 节点。
+    """
+    row_idx = int(row_idx)
+    row_start = int(row_ptr[row_idx].item())
+    row_end = int(row_ptr[row_idx + 1].item())
+
+    src_indices = col_ind[row_start:row_end].to('cpu').long()
+    w = values[row_start:row_end].to('cpu')
+    feat_cpu = features.to('cpu')
+    contrib_feats = feat_cpu.index_select(0, src_indices)
+
+    lines = []
+    lines.append("")
+    lines.append("-" * 80)
+    lines.append(f"CPU 参与计算的行 row_idx={row_idx} (dst={row_idx})，nnz={row_end-row_start}")
+    lines.append(f"row_ptr[{row_idx}]={row_start}, row_ptr[{row_idx+1}]={row_end}")
+    if out_txt_path:
+        lines.append(f"将保存 txt 到: {out_txt_path}")
+    lines.append("-" * 80)
+    for i in range(row_end - row_start):
+        si = int(src_indices[i].item())
+        wi = float(w[i].item())
+        vec = contrib_feats[i].numpy()
+        lines.append(f"[{i}] src={si}, w={wi}, feat={vec}")
+    lines.append("-" * 80)
+    lines.append("")
+
+    if out_txt_path:
+        os.makedirs(os.path.dirname(out_txt_path), exist_ok=True)
+        with open(out_txt_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+
+    if print_to_stdout:
+        print("\n".join(lines))
+
 # 添加项目根目录和 build 目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 build_dir = os.path.join(project_root, "build")
@@ -110,6 +151,12 @@ def compare_results(cpu_result, npu_result, dataset_name, original_feat_dim, ali
     # 转换为 numpy 进行比较
     cpu_np = cpu_result.numpy().astype(np.float32)
     npu_np = npu_result.numpy().astype(np.float32)
+
+    # print("CPU")
+    # print(cpu_np[1358])
+    # print("NPU")
+    # print(npu_np[1358])
+    
     
     # 计算误差
     abs_diff = np.abs(cpu_np - npu_np)
@@ -193,6 +240,18 @@ def run_comparison(dataset_name, dataset_loader):
     row_ptr = torch.from_numpy(adj_scipy.indptr).int()
     col_ind = torch.from_numpy(adj_scipy.indices).int()
     values = torch.from_numpy(adj_scipy.data).float()
+
+    # dump：CPU 参与计算第 1358 行（dst=1358）的所有特征向量和权重
+    # dump_row = int(os.environ.get("DUMP_ROW", "1358"))
+    # dump_enable = os.environ.get("DUMP_CPU_CONTRIB", "1") not in ("0", "false", "False")
+    # if dump_enable:
+    #     results_dir = os.path.join(os.path.dirname(__file__), "results")
+    #     out_txt = os.environ.get("DUMP_TXT_PATH", os.path.join(results_dir, f"cpu_row{dump_row}_contrib_{dataset_name}.txt"))
+    #     dump_cpu_row_contrib(
+    #         dump_row, row_ptr, col_ind, values, features,
+    #         out_txt_path=out_txt,
+    #         print_to_stdout=True
+    #     )
     
     # 计算每行最大非零元素个数
     max_nnz = 0
@@ -215,8 +274,6 @@ def run_comparison(dataset_name, dataset_loader):
     
     # 比较结果
     success = compare_results(cpu_result, npu_result, dataset_name, original_feat_dim, aligned_feat_dim)
-
-
     return success
 
 
@@ -230,7 +287,7 @@ def main():
     datasets = [
         
         ("PubMed", PubmedGraphDataset),
-        # ("Cora", CoraGraphDataset),
+        ("Cora", CoraGraphDataset),
     ]
     
     all_success = True

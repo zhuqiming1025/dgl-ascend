@@ -24,7 +24,7 @@ def main():
     num_iterations = 100
     datasets = [
         ("Cora", CoraGraphDataset),
-        ("PubMed", PubmedGraphDataset),
+        # ("PubMed", PubmedGraphDataset),
     ]
 
     all_results = []
