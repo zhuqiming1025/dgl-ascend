@@ -20,6 +20,7 @@ dgl_option(BUILD_TYPE "Type of the build: dev, dogfood or release" "dev")
 message(STATUS "Build for ${BUILD_TYPE}")
 
 dgl_option(USE_CUDA "Build with CUDA" OFF)
+dgl_option(USE_ASCEND "Build with Huawei Ascend NPU" OFF)
 dgl_option(TORCH_PYTHON_INTERPS "Python interpreter for building sub-components" python3)
 
 # Conda build related options.
@@ -151,6 +152,37 @@ if(NOT MSVC)
 set(DGL_LINKER_LIBS "dl")
 endif(NOT MSVC)
 
+# Configure Huawei Ascend NPU
+if(USE_ASCEND)
+  message(STATUS "Build with Huawei Ascend NPU support")
+  # Find CANN (Ascend) toolkit
+  if(DEFINED ENV{ASCEND_TOOLKIT_HOME})
+    set(ASCEND_PATH $ENV{ASCEND_TOOLKIT_HOME})
+  elseif(DEFINED ENV{ASCEND_HOME})
+    set(ASCEND_PATH $ENV{ASCEND_HOME})
+  else()
+    set(ASCEND_PATH "/usr/local/Ascend/ascend-toolkit/latest")
+  endif()
+  
+  if(EXISTS ${ASCEND_PATH})
+    message(STATUS "Found Ascend toolkit at: ${ASCEND_PATH}")
+    include_directories("${ASCEND_PATH}/include")
+    link_directories("${ASCEND_PATH}/lib64")
+    add_definitions(-DDGL_USE_ASCEND)
+    # Find and link Ascend runtime library
+    find_library(ASCENDCL_LIB ascendcl HINTS "${ASCEND_PATH}/lib64" "${ASCEND_PATH}/acllib/lib64")
+    if(ASCENDCL_LIB)
+      message(STATUS "Found ascendcl library: ${ASCENDCL_LIB}")
+      list(APPEND DGL_LINKER_LIBS ${ASCENDCL_LIB})
+    else()
+      # Try with just the library name if find_library fails
+      list(APPEND DGL_LINKER_LIBS ascendcl)
+    endif()
+  else()
+    message(WARNING "Ascend toolkit not found at ${ASCEND_PATH}, building without ACL support")
+  endif()
+endif(USE_ASCEND)
+
 if(MSVC OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 set(DGL_RUNTIME_LINKER_LIBS "")
 else(MSVC OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
@@ -198,6 +230,7 @@ file(GLOB DGL_SRC
   src/random/*.cc
   src/random/cpu/*.cc
   src/runtime/*.cc
+  src/runtime/ascend/*.cc
   src/geometry/*.cc
   src/geometry/cpu/*.cc
   src/partition/*.cc

@@ -101,13 +101,27 @@ def context(input):
 
 
 def device_type(ctx):
-    return th.device(ctx).type
+    ctx = th.device(ctx)
+    # Map npu to ascend for DGL internal use
+    if ctx.type == "npu":
+        return "npu"
+    return ctx.type
 
 
 def device_id(ctx):
     ctx = th.device(ctx)
     if ctx.index is None:
-        return 0 if ctx.type == "cpu" else th.cuda.current_device()
+        if ctx.type == "cpu":
+            return 0
+        elif ctx.type == "cuda":
+            return th.cuda.current_device()
+        elif ctx.type == "npu":
+            # torch_npu >= 2.5.1 auto-registers with torch, no explicit import needed
+            if hasattr(th, 'npu'):
+                return th.npu.current_device()
+            return 0
+        else:
+            return 0
     else:
         return ctx.index
 
@@ -118,6 +132,8 @@ def to_backend_ctx(dglctx):
         return th.device("cpu")
     elif dev_type == 2:
         return th.device("cuda", dglctx.device_id)
+    elif dev_type == 13:
+        return th.device("npu", dglctx.device_id)
     else:
         raise ValueError("Unsupported DGL device context:", dglctx)
 
@@ -141,6 +157,15 @@ def copy_to(input, ctx, **kwargs):
         if ctx.index is not None:
             th.cuda.set_device(ctx.index)
         return input.cuda(**kwargs)
+    elif ctx.type == "npu":
+        # torch_npu >= 2.5.1 auto-registers with torch, no explicit import needed
+        if not hasattr(th, 'npu'):
+            raise RuntimeError(
+                "NPU support not available. Please install torch_npu to use NPU devices."
+            )
+        if ctx.index is not None:
+            th.npu.set_device(ctx.index)
+        return input.npu(**kwargs)
     else:
         raise RuntimeError("Invalid context", ctx)
 
