@@ -7,14 +7,14 @@ LightGCN使用DGL实现
 运行load_gowalla.sh以及load_amazon-book.sh以下载这两个数据集。yelp2018数据集已下载
 
 示例运行：
-python train.py --dataset gowalla --batch 2048 --recdim 64
+python main.py --dataset gowalla --batch 2048 --recdim 64
 
-python train.py --dataset amazon-book --batch 2048 --recdim 64
+python main.py --dataset amazon-book --batch 2048 --recdim 64
 
-python train.py --dataset yelp2018 --batch 2048 --recdim 64
+python main.py --dataset yelp2018 --batch 2048 --recdim 64
 
 运行时间较长，需耐心等待若干分钟
 
-todo: 写模型持久化、test的代码。   优化代码，减少运行时长，可视化运行时长
+优化代码，减少运行时长，可视化运行时长
 
 
