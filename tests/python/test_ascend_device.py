@@ -3,9 +3,20 @@ import torch
 import dgl
 
 
+# def _check_npu_available():
+#     """Check if NPU is available. Works with torch_npu >= 2.5.1 without explicit import."""
+#     return hasattr(torch, 'npu') and torch.npu.is_available()
+
 def _check_npu_available():
-    """Check if NPU is available. Works with torch_npu >= 2.5.1 without explicit import."""
-    return hasattr(torch, 'npu') and torch.npu.is_available()
+    """Check if NPU is available. Works with torch_npu >= 2.5.1 without explicit import. For torch_npu < 2.5.1, it attempts to import torch_npu explicitly."""
+    if hasattr(torch, 'npu') and torch.npu.is_available():
+        return True
+
+    try:
+        import torch_npu
+        return hasattr(torch, 'npu') and torch.npu.is_available()
+    except ImportError:
+        return False
 
 
 def test_device_context_mapping():

@@ -173,7 +173,10 @@ cmake "${CMAKE_ARGS[@]}" ..
 
 # Build
 echo_info "Building DGL with ${JOBS} parallel jobs..."
+
 make -j${JOBS}
+# Only build the dgl library, skip tests to avoid missing NPU implementations
+#make dgl -j${JOBS}
 
 # Check if build was successful
 if [[ $? -eq 0 ]]; then

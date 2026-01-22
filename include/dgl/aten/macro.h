@@ -41,13 +41,19 @@
  * We treat pinned memory as normal host memory if we don't want
  * to enable CUDA UVA access for this operator
  */
-#ifdef DGL_USE_CUDA
+#if defined(DGL_USE_CUDA)
 #define ATEN_XPU_SWITCH_CUDA(val, XPU, op, ...)                          \
   do {                                                                   \
     if ((val) == kDGLCPU) {                                              \
       constexpr auto XPU = kDGLCPU;                                      \
       { __VA_ARGS__ }                                                    \
-    } else if ((val) == kDGLCUDA) {                                      \
+    }                                                                    \
+    /* Ascend NPU support */                                             \
+    else if ((val) == kDGLAscend) {                                      \
+      constexpr auto XPU = kDGLAscend;                                   \
+      { __VA_ARGS__ }                                                    \
+    }                                                                    \
+    else if ((val) == kDGLCUDA) {                                        \
       constexpr auto XPU = kDGLCUDA;                                     \
       { __VA_ARGS__ }                                                    \
     } else {                                                             \
@@ -55,9 +61,23 @@
                  << dgl::runtime::DeviceTypeCode2Str(val) << " device."; \
     }                                                                    \
   } while (0)
-#else  // DGL_USE_CUDA
+#elif defined(DGL_USE_ASCEND)
+#define ATEN_XPU_SWITCH_CUDA(val, XPU, op, ...)                          \
+  do {                                                                   \
+    if ((val) == kDGLCPU) {                                              \
+      constexpr auto XPU = kDGLCPU;                                      \
+      { __VA_ARGS__ }                                                    \
+    } else if ((val) == kDGLAscend) {                                    \
+      constexpr auto XPU = kDGLAscend;                                   \
+      { __VA_ARGS__ }                                                    \
+    } else {                                                             \
+      LOG(FATAL) << "Operator " << (op) << " does not support "          \
+                 << dgl::runtime::DeviceTypeCode2Str(val) << " device."; \
+    }                                                                    \
+  } while (0)
+#else  // DGL_USE_CUDA / DGL_USE_ASCEND
 #define ATEN_XPU_SWITCH_CUDA ATEN_XPU_SWITCH
-#endif  // DGL_USE_CUDA
+#endif  // DGL_USE_CUDA / DGL_USE_ASCEND
 
 /**
  * Dispatch according to integral type (either int32 or int64):

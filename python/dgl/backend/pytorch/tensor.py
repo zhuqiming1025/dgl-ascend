@@ -457,6 +457,36 @@ def zerocopy_from_numpy(np_array):
 def zerocopy_to_dgl_ndarray(data):
     if data.dtype == th.bool:
         data = data.byte()
+    # NPU devices don't support DLPack, use copy-based conversion instead
+    if hasattr(data, 'device') and hasattr(data.device, 'type') and data.device.type == 'npu':
+        # For NPU, we need to create NDArray on NPU and copy data
+        # This is a workaround until NPU DLPack support is available
+        data = data.contiguous()
+        # Convert PyTorch dtype to DGL dtype string
+        dtype_map = {
+            th.float32: "float32",
+            th.float64: "float64",
+            th.int32: "int32",
+            th.int64: "int64",
+            th.uint8: "uint8",
+            th.int8: "int8",
+        }
+        dgl_dtype = dtype_map.get(data.dtype, "float32")
+        # Create DGL context for NPU
+        device_id = data.device.index if data.device.index is not None else 0
+        dgl_ctx_npu = nd.context("npu", device_id)
+        # Create empty NDArray on NPU
+        dgl_array_npu = nd.empty(list(data.shape), dtype=dgl_dtype, ctx=dgl_ctx_npu)
+        # Copy data: NPU tensor -> CPU numpy -> DGL NDArray (on CPU) -> copyto to NPU
+        data_np = data.cpu().numpy()
+        # Create temporary CPU NDArray to hold the data
+        dgl_ctx_cpu = nd.context("cpu", 0)
+        dgl_array_cpu = nd.empty(list(data.shape), dtype=dgl_dtype, ctx=dgl_ctx_cpu)
+        # Copy numpy data to CPU NDArray
+        dgl_array_cpu.copyfrom(data_np)
+        # Copy from CPU NDArray to NPU NDArray
+        dgl_array_cpu.copyto(dgl_array_npu)
+        return dgl_array_npu
     return nd.from_dlpack(dlpack.to_dlpack(data.contiguous()))
 
 
@@ -506,7 +536,18 @@ def zerocopy_from_dgl_ndarray(data):
             device=to_backend_ctx(data.ctx),
         )
     else:
-        return dlpack.from_dlpack(data.to_dlpack())
+        # NPU devices don't support DLPack, use copy-based conversion instead
+        if hasattr(data, 'ctx') and hasattr(data.ctx, 'device_type') and data.ctx.device_type == 13:  # kDGLAscend
+            # For NPU, we need to copy data from DGL NDArray to PyTorch tensor
+            # This is a workaround until NPU DLPack support is available
+            # Copy to CPU numpy first, then create PyTorch tensor on NPU
+            data_np = data.asnumpy()  # This copies to CPU numpy
+            # Create PyTorch tensor on NPU and copy data
+            device_id = data.ctx.device_id if hasattr(data.ctx, 'device_id') else 0
+            result = th.tensor(data_np, device=th.device('npu', device_id))
+            return result
+        else:
+            return dlpack.from_dlpack(data.to_dlpack())
 
 
 def sync():

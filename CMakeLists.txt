@@ -227,18 +227,21 @@ file(GLOB DGL_SRC
   src/*.cc
   src/array/*.cc
   src/array/cpu/*.cc
+  src/array/npu/*.cc
   src/random/*.cc
   src/random/cpu/*.cc
   src/runtime/*.cc
   src/runtime/ascend/*.cc
   src/geometry/*.cc
   src/geometry/cpu/*.cc
+  src/geometry/npu/*.cc
   src/partition/*.cc
 )
 
 file(GLOB_RECURSE DGL_SRC_1
   src/api/*.cc
   src/graph/*.cc
+  src/graph/transform/npu/*.cc
   src/scheduler/*.cc
 )
 

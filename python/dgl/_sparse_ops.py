@@ -235,6 +235,7 @@ def _gspmm(gidx, op, reduce_op, u, e):
             arg_e = F.zeros(v_shp, idtype, ctx)
     arg_u_nd = to_dgl_nd_for_write(arg_u)
     arg_e_nd = to_dgl_nd_for_write(arg_e)
+    v_nd = to_dgl_nd_for_write(v)
     if gidx.num_edges(0) > 0:
         _CAPI_DGLKernelSpMM(
             gidx,
@@ -242,10 +243,16 @@ def _gspmm(gidx, op, reduce_op, u, e):
             reduce_op,
             to_dgl_nd(u if use_u else None),
             to_dgl_nd(e if use_e else None),
-            to_dgl_nd_for_write(v),
+            v_nd,
             arg_u_nd,
             arg_e_nd,
         )
+    # For NPU, we need to re-read the result from DGL NDArray because
+    # NPU doesn't support zero-copy (DLPack), so the NDArray and PyTorch tensor
+    # don't share memory. We need to copy the result back to PyTorch tensor.
+    # Check if the device is NPU by checking the DGL NDArray context
+    if v_nd is not None and hasattr(v_nd, 'ctx') and hasattr(v_nd.ctx, 'device_type') and v_nd.ctx.device_type == 13:  # kDGLAscend
+        v = F.zerocopy_from_dgl_ndarray(v_nd)
     # NOTE(zihao): actually we can avoid the following step, because arg_*_nd
     # refers to the data that stores arg_*. After we call _CAPI_DGLKernelSpMM,
     # arg_* should have already been changed. But we found this doesn't work
