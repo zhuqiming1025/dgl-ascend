@@ -5,6 +5,8 @@ Provide various functions.
 
 import numpy as np
 import torch
+import time
+from dgl import graphbolt as gb
 
 def RecallPrecision_ATk(test_data, r, k):
     right_pred = r[:, :k].sum(1)
@@ -42,29 +44,82 @@ def getLabel(test_data, pred_data):
         r.append(pred)
     return np.array(r).astype('float')
 
-# The sampling function is implemented based on the DGL NGCF example (PyTorch backend).
-def sample_triplets(g, n, etype=('user', 'interacts', 'item'), device='cpu'):
-    # 1. All positive samples.
-    users, pos_items = g.edges(etype=etype)
-    num_edges = users.shape[0]
-    num_items = g.num_nodes('item')
-    # 2. Randomly sample n positive edges (if the number of edges is less than n, sample all)
-    n = min(n, num_edges)
-    perm = torch.randperm(num_edges, device=users.device)[:n]
-    users = users[perm]
-    pos_items = pos_items[perm]
-    # 3.  For convenience in negative sampling, first get CSR format of Adjacency Matrix
-    A = g.adj().csr()
-    # 4. for every tuple (user, pos_item), find one negative_item.
+# Negative sampling function that ensures negative samples are not real edges.
+# Based on the pattern: randomly select users, then sample positive and negative items for each user.
+def sample_triplets(hetero_g, allPos, allPos_sets, n, etype=('user', 'interacts', 'item')):
+    time_start = time.time()
+    
+    # 1. Get graph information
+    num_users = hetero_g.num_nodes('user')
+    num_items = hetero_g.num_nodes('item')
+    device = hetero_g.device
+    
+    # 3. Randomly select n users (with replacement)
+    selected_users = np.random.randint(0, num_users, n)
+    
+    # 4. Sample positive and negative items for each selected user
+    users_list = []
+    pos_items_list = []
     neg_items_list = []
-    for user in users.tolist():
-        while True:
-            rand_neg_item = torch.randint(0, num_items, (1,)).item()
-            start_col = A[0][user].item()
-            end_col = A[0][user+1].item()
-            if rand_neg_item not in A[1][start_col:end_col]:
-                neg_items_list.append(rand_neg_item)
+    
+    for user in selected_users:
+        user = int(user)
+        posForUser = allPos.get(user, [])
+
+        if len(posForUser) == 0:
+            continue
+        # Sample one positive item randomly
+        posindex = np.random.randint(0, len(posForUser))
+        positem = posForUser[posindex]
+        
+        # Sample negative item: ensure it's not in user's positive items
+        pos_set = allPos_sets.get(user, set())
+        max_retries = 100  # Prevent infinite loop
+        negitem = None
+        
+        for _ in range(max_retries):
+            negitem = np.random.randint(0, num_items)
+            if negitem not in pos_set:
                 break
-    neg_items = torch.tensor(neg_items_list, device=users.device)
-    # Return triplets (user, pos_item, neg_item)
+        
+        # If still not found (unlikely), use first non-positive item
+        if negitem is None or negitem in pos_set:
+            # Fallback: find any item not in positive set
+            all_items = set(range(num_items))
+            negative_candidates = list(all_items - pos_set)
+            if len(negative_candidates) > 0:
+                negitem = np.random.choice(negative_candidates)
+            else:
+                continue  # Skip if user has all items as positive
+        
+        users_list.append(user)
+        pos_items_list.append(positem)
+        neg_items_list.append(negitem)
+    
+    # 5. Convert to tensors
+    users = torch.tensor(users_list, dtype=torch.long, device=device)
+    pos_items = torch.tensor(pos_items_list, dtype=torch.long, device=device)
+    neg_items = torch.tensor(neg_items_list, dtype=torch.long, device=device)
+    
     return users, pos_items, neg_items
+
+def shuffle(*arrays, **kwargs):
+
+    require_indices = kwargs.get('indices', False)
+
+    if len(set(len(x) for x in arrays)) != 1:
+        raise ValueError('All inputs to shuffle must have '
+                         'the same length.')
+
+    shuffle_indices = np.arange(len(arrays[0]))
+    np.random.shuffle(shuffle_indices)
+
+    if len(arrays) == 1:
+        result = arrays[0][shuffle_indices]
+    else:
+        result = tuple(x[shuffle_indices] for x in arrays)
+
+    if require_indices:
+        return result, shuffle_indices
+    else:
+        return result

@@ -13,54 +13,48 @@ from model import *
 
 def train_lightgcn(dataset):
     g = dataset.graph
-    train_loader = dataset.train_loader
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     n_users = dataset.n_users
     n_items = dataset.n_items
+    n_edges = dataset.n_edges
     model = LightGCN(n_users, n_items, args.recdim, args.layer).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    loss_fn = BPRLoss(model)
     for epoch in range(args.epochs):
-        if epoch % 10 == 0:
+        if epoch % 10 == 0 and epoch != 0:
             print(f"Test {epoch/10}")
             test_lightgcn(dataset, model)
-
+        train_loader = dataset.build_train_dataset()
         model.train()
         total_loss = 0
-        num_samples = 0
-
+        total_batch = n_edges // args.batch + 1
         # Epoch start
         epoch_start = time.time()
 
         for batch_idx, (batch_user, batch_pos, batch_neg) in enumerate(train_loader):
             batch_start = time.time()  
             # Batch start
-            batch_user = batch_user.to(device)
-            batch_pos = batch_pos.to(device)
-            batch_neg = batch_neg.to(device)
-
             all_emb = model(g)
             user_emb = all_emb[batch_user]
             pos_emb = all_emb[batch_pos + n_users]
             neg_emb = all_emb[batch_neg + n_users]
 
-            loss, reg_loss = loss_fn(user_emb, pos_emb, neg_emb, batch_user, batch_pos, batch_neg)
+            loss, reg_loss = model.bprLoss(user_emb, pos_emb, neg_emb, batch_user, batch_pos, batch_neg)
+            batch_stage1 = time.time()
             reg_loss = reg_loss*args.decay
             loss=loss + reg_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            total_loss += loss.item() * len(batch_user)
-            num_samples += len(batch_user)
+            total_loss += loss.item()
 
             # Batch end
-            batch_time = time.time() - batch_start
-            # print(f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(loader)}, Batch time: {batch_time:.4f}s, Loss: {loss.item():.4f}")
+            batch_time = time.time()
+            # print(f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(train_loader)}, stage1 time: {batch_stage1 - batch_start:.4f}s, stage2 time: {batch_time - batch_stage1:.4f}s, Batch time: {batch_time - batch_start:.4f}s, Loss: {loss.item():.4f}")
 
         # Epoch end
         epoch_time = time.time() - epoch_start
-        total_loss /= num_samples if num_samples > 0 else 1
+        total_loss /= total_batch
         print(f"Epoch {epoch+1}/{args.epochs} finished. Epoch time: {epoch_time:.2f}s, Average BPR Loss: {total_loss:.4f}")
 
 def test_one_batch(X):

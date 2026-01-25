@@ -8,9 +8,9 @@ import argparse
 parser = argparse.ArgumentParser(description="Go lightGCN")
 parser.add_argument('--batch', type=int,default=2048,
                     help="the batch size for bpr loss training procedure")
-parser.add_argument('--recdim', type=int,default=64,
+parser.add_argument('--recdim', type=int,default=16,
                     help="the embedding size of lightGCN")
-parser.add_argument('--layer', type=int,default=3,
+parser.add_argument('--layer', type=int,default=1,
                     help="the layer num of lightGCN")
 parser.add_argument('--lr', type=float,default=0.001,
                     help="the learning rate")

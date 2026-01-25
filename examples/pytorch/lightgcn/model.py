@@ -47,27 +47,18 @@ class LightGCN(nn.Module):
         # Concatenate user and item embeddings, and return the complete embedding
         all_emb = torch.cat([final_user_emb, final_item_emb], dim=0)
         return all_emb
-
-# 
-class BPRLoss(nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.userEmb = model.embedding_user.weight
-        self.itemEmb = model.embedding_item.weight
-        self.all_embedding = torch.cat([self.userEmb, self.itemEmb], dim=0)
     
-    def forward(self, user_emb, pos_emb, neg_emb, batch_user, batch_pos, batch_neg):
-        # Compute the BPRLoss
+    def bprLoss(self, user_emb, pos_emb, neg_emb, batch_user, batch_pos, batch_neg):
         pos_score = torch.mul(user_emb, pos_emb)
         pos_score = torch.sum(pos_score, dim=1)
         neg_score = torch.mul(user_emb, neg_emb)
         neg_score = torch.sum(neg_score, dim=1)
         loss = torch.mean(F.softplus(neg_score - pos_score))
         # Compute the RegLoss
-        userEmb0 = self.all_embedding[batch_user]
-        posEmb0 = self.all_embedding[batch_pos]
-        negEmb0 = self.all_embedding[batch_neg]
+        userEmb0 = self.embedding_user.weight[batch_user]
+        posEmb0 = self.embedding_item.weight[batch_pos]
+        negEmb0 = self.embedding_item.weight[batch_neg]
         reg_loss = (1/2)*(userEmb0.norm(2).pow(2) + 
                          posEmb0.norm(2).pow(2)  +
                          negEmb0.norm(2).pow(2))/float(len(batch_user))
-        return loss, reg_loss
+        return loss.cpu(), reg_loss.cpu()
