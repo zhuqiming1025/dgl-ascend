@@ -17,8 +17,4 @@ python main.py --dataset yelp2018 --batch 2048 --recdim 64
 
 优化代码，减少运行时长，可视化运行时长
 
-示例运行：python train.py --dataset gowalla
-
-todo: 写模型持久化、test的代码。   优化代码，减少运行时长，可视化运行时长
-
 
