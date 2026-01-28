@@ -82,6 +82,7 @@ def test_gcn_ascend():
     # Backward pass needs the reverse graph. If forward uses CSC (in-edge aggregation),
     # backward might need CSR (out-edge aggregation) or the transpose of current graph.
     print("Pre-converting graph format on CPU...")
+    g = g.int()
     g = g.formats(['csc', 'csr'])
     g.create_formats_()
 
