@@ -12,7 +12,7 @@ from utils import *
 class Dataset:
     def __init__(self, path):
         self.path = path
-        self.device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device(args.device)
         self.train_file = path + "/train.txt"
         self.test_file = path + "/test.txt"
         self._load_data()
@@ -68,8 +68,8 @@ class Dataset:
         src_bidir = torch.cat([src, dst_offset])
         dst_bidir = torch.cat([dst_offset, src])
         self.graph = dgl.graph((src_bidir, dst_bidir), num_nodes=self.n_users + self.n_items)
-        self.hetero_graph.to(self.device)
-        self.graph.to(self.device)
+        self.heterograph = self.hetero_graph.to(self.device)
+        self.graph = self.graph.to(self.device)
         print("graph for training:", self.hetero_graph)
 
     def build_train_dataset(self):

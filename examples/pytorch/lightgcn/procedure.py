@@ -13,7 +13,7 @@ from model import *
 
 def train_lightgcn(dataset):
     g = dataset.graph
-    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    device = torch.device(args.device)
     n_users = dataset.n_users
     n_items = dataset.n_items
     n_edges = dataset.n_edges
