@@ -54,45 +54,6 @@ extern "C" uint32_t aclrtlaunch_spmm_sum(uint32_t blockDim, aclrtStream stream,
 
 namespace dgl {
 namespace aten {
-
-// Helper function to get readable type name
-template<typename T>
-const char* GetTypeName() {
-  if (std::is_same<T, int32_t>::value) return "int32_t";
-  if (std::is_same<T, int64_t>::value) return "int64_t";
-  if (std::is_same<T, uint32_t>::value) return "uint32_t";
-  if (std::is_same<T, uint64_t>::value) return "uint64_t";
-  if (std::is_same<T, float>::value) return "float";
-  if (std::is_same<T, double>::value) return "double";
-  return typeid(T).name();
-}
-
-/**
- * @brief Prepare edge weights (values) for kernel execution
- * 
- * @param values_kernel Output pointer to values buffer (will be set)
- * @param has_data Whether CSR has edge data
- * @param data_ptr Pointer to edge data if has_data is true
- * @param num_edges Number of edges
- * @param stream ACL stream for async operations
- */
-template <typename DType>
-void PrepareEdgeWeights(void*& values_kernel, bool has_data, 
-                        const void* data_ptr, int64_t num_edges, 
-                        aclrtStream stream) {
-  if (has_data) {
-    values_kernel = const_cast<void*>(data_ptr);
-  } else {
-    // All ones for edge weights - allocate and initialize
-    size_t values_size = num_edges * sizeof(DType);
-    ASCEND_CALL(aclrtMalloc(&values_kernel, values_size, ACL_MEM_MALLOC_HUGE_FIRST));
-    std::vector<DType> ones(num_edges, static_cast<DType>(1.0));
-    ASCEND_CALL(aclrtMemcpyAsync(values_kernel, values_size,
-                                 ones.data(), values_size,
-                                 ACL_MEMCPY_HOST_TO_DEVICE, stream));
-  }
-}
-
 /**
  * @brief Ascend NPU implementation of SpMM on CSR format using AscendC kernel.
  * 
@@ -124,34 +85,20 @@ void SpMMCsrAscend(
   int64_t num_cols = csr.num_cols;
   int64_t num_edges = csr.indices->shape[0];
   int64_t out_dim = (out->ndim > 1) ? out->shape[1] : 1;
-  int64_t ufeat_dim = (ufeat->ndim > 1) ? ufeat->shape[1] : 1;
-  
-  bool has_data = CSRHasData(csr);
-  bool has_efeat = !aten::IsNullArray(efeat);
   
   // Get device pointers - data is already on NPU
   const IdType* indptr_ptr = static_cast<const IdType*>(csr.indptr->data);
   const IdType* indices_ptr = static_cast<const IdType*>(csr.indices->data);
-  const IdType* data_ptr = has_data ? static_cast<const IdType*>(csr.data->data) : nullptr;
   const DType* ufeat_ptr = static_cast<const DType*>(ufeat->data);
-  const DType* efeat_ptr = has_efeat ? static_cast<const DType*>(efeat->data) : nullptr;
   DType* out_ptr = static_cast<DType*>(out->data);
   
-  // Validate pointers are not null
-  CHECK(ufeat_ptr != nullptr) << "ufeat pointer is null";
-  CHECK(indices_ptr != nullptr) << "indices pointer is null";
-  CHECK(out_ptr != nullptr) << "out pointer is null";
   
-  // Create ACL stream for async operations
-  aclrtStream stream = nullptr;
-  ASCEND_CALL(aclrtCreateStream(&stream));
-  
-  // Initialize output to zero using ACL memset
-  size_t out_size = num_rows * out_dim * sizeof(DType);
-  ASCEND_CALL(aclrtMemsetAsync(out_ptr, out_size, 0, out_size, stream));
-  
-  // Synchronize to ensure memset completes before kernel launch
-  ASCEND_CALL(aclrtSynchronizeStream(stream));
+  // The stream is created once on first use and reused for subsequent calls.
+  static aclrtStream spmm_stream = nullptr;
+  if (spmm_stream == nullptr) {
+    ASCEND_CALL(aclrtCreateStream(&spmm_stream));
+  }
+  aclrtStream stream = spmm_stream;
   
   // Calculate maxNnzPerRow on CPU first
   std::vector<IdType> indptr_host(num_rows + 1);
@@ -183,7 +130,7 @@ void SpMMCsrAscend(
   ASCEND_CALL(aclrtMemcpyAsync(tiling_device, sizeof(SpmmSumTilingData),
                                &tiling, sizeof(SpmmSumTilingData),
                                ACL_MEMCPY_HOST_TO_DEVICE, stream));
-  
+
   // Select kernel and data type based on DType
   void* ufeat_kernel = nullptr;
   void* out_kernel = nullptr;
@@ -193,13 +140,6 @@ void SpMMCsrAscend(
   out_kernel = out_ptr;
   // No need for edge weights - kernel will use weight=1.0 for all edges
   
-  ASCEND_CALL(aclrtSynchronizeStream(stream));
-  
-  // Verify tiling data on device
-  SpmmSumTilingData tiling_check;
-  ASCEND_CALL(aclrtMemcpy(&tiling_check, sizeof(SpmmSumTilingData),
-                          tiling_device, sizeof(SpmmSumTilingData),
-                          ACL_MEMCPY_DEVICE_TO_HOST));
   // Launch AscendC kernel
   uint32_t blockDim = 32; // Number of cores to use
   aclError launch_err = ACLRT_LAUNCH_KERNEL(spmm_sum)(blockDim, stream,
@@ -215,13 +155,8 @@ void SpMMCsrAscend(
   ASCEND_CALL(aclrtSynchronizeStream(stream));
   
   // Clean up
-
   if (tiling_device != nullptr) {
     ASCEND_CALL(aclrtFree(tiling_device));
-  }
-  // Destroy stream
-  if (stream != nullptr) {
-    ASCEND_CALL(aclrtDestroyStream(stream));
   }
   
   return;

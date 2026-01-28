@@ -9,7 +9,7 @@ struct SpmmSumTilingData {
     uint32_t nnz;
     uint32_t maxNnzPerRow;
 };
-#endif  // SPMM_SUM_TILING_H
+#endif
 
 #include "kernel_operator.h"
 
