@@ -165,7 +165,7 @@ if __name__ == "__main__":
     cpu_device = torch.device("cpu")
     test_gcn_ascend(cpu_device)
 
-    # 再在 NPU:0 上运行
-    print("==== Running GCN on NPU:0 ====")
-    npu_device = torch.device("npu:0")
+    # 再在 NPU:1 上运行
+    print("==== Running GCN on NPU:1 ====")
+    npu_device = torch.device("npu:1")
     test_gcn_ascend(npu_device)
