@@ -102,7 +102,7 @@ setup_ascend_env() {
 BUILD_TYPE="dev"
 CLEAN_BUILD=false
 JOBS=$(nproc)
-SOC_VERSION="${SOC_VERSION:-}"  # Use environment variable if set
+SOC_VERSION="${SOC_VERSION:-Ascend910B4}"  # Default to Ascend910B4
 
 while getopts "ht:cj:s:" opt; do
     case ${opt} in
@@ -113,7 +113,7 @@ while getopts "ht:cj:s:" opt; do
             echo "  -t TYPE    Build type: dev, dogfood, release (default: dev)"
             echo "  -c         Clean build (remove existing build directory)"
             echo "  -j JOBS    Number of parallel jobs (default: $(nproc))"
-            echo "  -s SOC     SOC version: Ascend910B, Ascend910B4, etc. (default: Ascend910B)"
+            echo "  -s SOC     SOC version: Ascend910B, Ascend910B4, etc. (default: Ascend910B4)"
             echo "              Can also be set via SOC_VERSION environment variable"
             echo "  -h         Show this help message"
             exit 0
@@ -139,7 +139,7 @@ done
 
 # Set default SOC_VERSION if not specified
 if [[ -z "${SOC_VERSION}" ]]; then
-    SOC_VERSION="Ascend910B"
+    SOC_VERSION="Ascend910B4"
     echo_info "SOC_VERSION not specified, using default: ${SOC_VERSION}"
 else
     echo_info "Using SOC_VERSION: ${SOC_VERSION}"
